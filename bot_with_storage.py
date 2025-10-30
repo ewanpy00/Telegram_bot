@@ -12,7 +12,7 @@ from typing import Optional, Tuple
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import Message, FSInputFile
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 from dotenv import load_dotenv
 
@@ -155,6 +155,7 @@ async def process_makefilm_request(prompt: str) -> Tuple[str, Optional[str], Opt
         page = await context.new_page()
         await page.goto(MAKEFILM_URL, wait_until='networkidle')
         await page.wait_for_timeout(3000)
+        # await asyncio.sleep(60)  # Удаляю эту строку, чтоб промпт водился сразу
         # 1. Явный поиск и ввод промпта
         prompt_input_selector = 'body > div > div > div.flex-1.flex.flex-col > main > div > div > div > div.px-8.pt-1 > div > div > div.p-4.pb-12 > textarea'
         logger.info('Ищу поле для ввода промпта...')
@@ -276,8 +277,9 @@ async def process_makefilm_request(prompt: str) -> Tuple[str, Optional[str], Opt
             logger.error(f"Ошибка при поиске/клике по кнопке генерации: {e}")
             raise
 
-        # Вот теперь — цикл ожидания итогового <img>
-        final_img_selector = 'img[src*="makefilm.ai"][src$=".jpg"]:not([src*="thumb"])'
+        # После клика по кнопке Generate ждем 2 минуты
+        await page.wait_for_timeout(120000)  # 2 минуты
+        final_img_selector = 'img[alt="Generated image"]'
         logger.info("Ожидание появления итогового <img> после старта генерации...")
         img_src = None
         for i in range(300):
@@ -403,7 +405,7 @@ async def handle_text_message(message: Message):
                         photo=photo_file,
                         caption=f"🖼️ Ваше изображение без watermark\nПромпт: {user_prompt}"
                     )
-                photo_sent = True
+                    photo_sent = True
             except Exception as e:
                 logger.warning(f"Ошибка при отправке файла: {e}")
         # Пытаемся скачать по direct src
@@ -417,15 +419,25 @@ async def handle_text_message(message: Message):
                             img_path = "/tmp/alt_img.jpg"
                             with open(img_path, "wb") as f:
                                 f.write(await resp.read())
-                            with open(img_path, "rb") as f:
-                                await bot.send_photo(
-                                    chat_id=message.chat.id,
-                                    photo=f,
-                                    caption=f"🖼️ Ваше изображение (резервно, через <img src>)\nПромпт: {user_prompt}"
-                                )
+                            # исправлено: теперь отправляем с помощью FSInputFile
+                            await bot.send_photo(
+                                chat_id=message.chat.id,
+                                photo=FSInputFile(img_path),
+                                caption=f"🖼️ Ваше изображение (резервно, через <img src>)\nПромпт: {user_prompt}"
+                            )
                             photo_sent = True
+                            logger.info(f"Изображение отправлено по резервному пути (через img_src): {img_src}")
             except Exception as e:
                 logger.warning(f"Reserve img download failed: {e}")
+        # Сразу после успешной отправки фото и photo_sent = True, удаляем картинку из истории
+            if photo_sent:
+                try:
+                    delete_btn_selector = '#radix-\\:ri\\:-content-history > div > div > div > div > div:nth-child(1) > div.p-3 > div.flex.justify-between.items-end > div.flex.items-center.gap-1 > button.inline-flex.items-center.justify-center.gap-2.whitespace-nowrap.rounded-md.text-sm.font-medium.ring-offset-background.transition-colors.focus-visible\\:outline-none.focus-visible\\:ring-2.focus-visible\\:ring-ring.focus-visible\\:ring-offset-2.disabled\\:pointer-events-none.disabled\\:opacity-50.\\[\\&_svg\\]:pointer-events-none.\\[\\&_svg\\]:size-4.\\[\\&_svg\\]:shrink-0.hover\\:bg-accent.h-6.w-6.text-gray-500.hover\\:text-red-500'
+                    await page.wait_for_selector(delete_btn_selector, timeout=8000)
+                    await page.click(delete_btn_selector)
+                    logger.info('Удалено изображение из истории (клик по delete-btn)')
+                except Exception as e:
+                    logger.warning(f'Ошибка при удалении из истории: {e}')
         # Фолбек — только ссылка если всё не удалось
         if not photo_sent:
             await processing_msg.edit_text(
