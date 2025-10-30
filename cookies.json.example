@@ -1,0 +1,22 @@
+[
+  {
+    "name": "session_id",
+    "value": "your_session_id_here",
+    "domain": ".makefilm.ai",
+    "path": "/",
+    "expires": -1,
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "Lax"
+  },
+  {
+    "name": "auth_token",
+    "value": "your_auth_token_here",
+    "domain": ".makefilm.ai",
+    "path": "/",
+    "expires": -1,
+    "httpOnly": false,
+    "secure": true,
+    "sameSite": "Lax"
+  }
+]

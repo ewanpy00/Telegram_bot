@@ -1,0 +1,4 @@
+# Зависимости для Telegram бота makefilm.ai
+aiogram==3.4.1
+playwright==1.40.0
+python-dotenv==1.0.0
